@@ -1,49 +1,46 @@
-# Skills Utilization - Course Recommendation Platform
+# Skills Utilization - AI Course Recommendation Platform
 
 ## Description
-**Skills Utilization** is a web-based educational platform designed to help users track their professional skills and discover relevant courses. The application features a recommendation engine that suggests courses based on a user's self-assessed skills and areas of interest (e.g., Frontend, Backend, Cybersecurity, AI). Users can browse a comprehensive catalog of courses, enroll in them, and save their favorite selections.
+**Skills Utilization** is a web-based educational platform designed to help users track their professional skills and discover relevant courses. 
+The application has recently been upgraded with an advanced **AI Recommendation Engine**. It uses machine learning vector embeddings (Semantic Search) to deeply understand the meaning of course descriptions, and Google's Gemini Large Language Model (LLM) to intelligently extract skills from user input and provide highly personalized course advice.
 
 ## Key Features
 - **User Authentication:** Secure JWT-based registration and login system with encrypted passwords.
-- **Skill Tracking:** Users can add and manage their personal skills and proficiency levels.
-- **Smart Course Recommendations:** An algorithm maps a user's skills to course requirements to generate a personalized list of recommended courses.
+- **AI Skill Extraction:** Users can describe their career goals in natural language, and an LLM Agent will automatically extract structured skills to build their profile.
+- **Semantic Course Recommendations:** Instead of simple keyword matching, the engine converts user profiles and courses into Vector Embeddings, using Cosine Similarity to find perfect semantic matches.
+- **Personalized AI Explanations:** The system uses Generative AI to dynamically write a personalized explanation of *why* a recommended course fits the user's specific skill set.
 - **Course Management:** Users can search the catalog, filter by category, enroll/unenroll in specific classes, and bookmark favorites.
-- **Data Seeding:** Includes a utility to automatically parse and seed skills and course data into the database from a structured JSON file.
-- **Modular Architecture:** Flask application structured with Blueprints for clear separation of concerns (Auth, Courses, Frontend).
 
 ## Technologies Used
 - **Backend:** Python 3, Flask REST API
+- **AI & Machine Learning:** `sentence-transformers` (all-MiniLM-L6-v2) for embeddings, `scikit-learn` for vector math, `google-generativeai` (Gemini API) for LLM agents.
 - **Database:** PostgreSQL
 - **ORM & Migrations:** SQLAlchemy Core, Alembic
-- **Security:** PyJWT for token-based authentication, Werkzeug/Bcrypt for password hashing.
-- **Frontend:** HTML, CSS, JavaScript (served via Flask templates/static folders).
+- **Frontend:** HTML, CSS, JavaScript (served via Flask templates/static folders)
 
 ## Project Structure
 - `app.py`: The entry point script to run the Flask application.
-- `app/__init__.py`: Application factory that initializes Flask, configurations, and registers Blueprints.
-- `app/models.py`: SQLAlchemy Core table definitions (`users`, `courses`, `skills`, `user_skills`, `user_courses`, `user_favorites`, etc.).
-- `app/db.py`: Engine initialization and database connection string.
-- `app/routes_auth.py`: API endpoints for user registration, login, profile management, and skill selection.
-- `app/routes_courses.py`: API endpoints for fetching courses, handling enrollments, managing favorites, and calculating skill-based recommendations.
-- `app/routes_frontend.py`: Routes for rendering the frontend HTML templates.
-- `seed_courses.py` & `courses.json`: Script and dataset for seeding initial courses and skills into the database.
+- `app/ai_services.py`: Core AI logic for vector generation, semantic math, and Gemini LLM interactions.
+- `app/models.py`: SQLAlchemy Core table definitions, including the `course_vectors` table for storing AI embeddings.
+- `app/routes_auth.py` & `app/routes_courses.py`: API endpoints for auth, profile management, semantic search recommendations, and AI endpoints.
+- `seed_courses.py` & `courses.json`: Script and dataset for seeding initial courses and skills.
+- `generate_embeddings.py`: AI utility script that reads course descriptions and mathematically encodes them into vector embeddings in the database.
 - `config.py`: Environment variable configurations and secret keys.
-- `alembic/`: Database migration files.
 
 ## Setup Instructions
 
 ### Prerequisites
 - Python 3.8+
 - PostgreSQL installed and running locally
+- Google Gemini API Key (Get one for free at [Google AI Studio](https://aistudio.google.com/app/apikey))
 
 ### 1. Database Configuration
 Ensure PostgreSQL is running and create the necessary database (default is `course_recommendation_db`):
 ```sql
 CREATE DATABASE course_recommendation_db;
 ```
-*(If your credentials differ, update the `DATABASE_URL` in `config.py` or export it as an environment variable).*
 
-### 2. Environment Setup
+### 2. Environment & AI Setup
 Navigate to the root directory and set up a Python virtual environment:
 ```bash
 # Clone or navigate to the project directory
@@ -62,16 +59,25 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Create a **`.env`** file in the root directory and add your AI key:
+```env
+GEMINI_API_KEY=your_google_gemini_api_key_here
+```
+
 ### 3. Run Database Migrations
-Use Alembic to create the database schema based on `models.py`:
+Use Alembic to create the database schema:
 ```bash
 alembic upgrade head
 ```
 
-### 4. Seed Initial Data
-Populate the database with the initial catalog of courses and required skills:
+### 4. Seed Data & Generate AI Embeddings
+First, populate the database with the initial catalog of courses:
 ```bash
 python seed_courses.py
+```
+Next, run the AI embeddings script to generate vector representations of every course so semantic search works:
+```bash
+python generate_embeddings.py
 ```
 
 ### 5. Start the Application
@@ -80,9 +86,3 @@ Run the Flask server:
 python app.py
 ```
 The application will start locally and be available at `http://127.0.0.1:5000`.
-
-## How It Works
-1. **Onboarding:** A new user registers for an account and logs in to receive a JWT authentication token.
-2. **Skill Assessment:** The user adds their existing skills (e.g., Python, JavaScript, Figma) to their profile.
-3. **Recommendations:** The backend evaluates the user's skill set against the `skill_requirements` of all available courses, generating a "Match Score". The user is presented with the highest matching courses.
-4. **Engagement:** The user can search the full catalog, filter by domains like DevOps or Design, enroll in courses to build a schedule, and add courses to their favorites list for later viewing.
