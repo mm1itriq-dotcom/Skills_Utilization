@@ -12,3 +12,8 @@ PyJWT==2.13.0
 SQLAlchemy==2.0.51
 typing_extensions==4.16.0
 Werkzeug==3.1.8
+sentence-transformers
+google-generativeai
+python-dotenv
+numpy
+scikit-learn

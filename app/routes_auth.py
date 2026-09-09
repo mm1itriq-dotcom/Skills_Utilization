@@ -394,4 +394,58 @@ def delete_user_skill(current_user_id, skill_id):
         conn.commit()
     return jsonify({"message": "Skill deleted successfully"}), 200
 
+from app.ai_services import extract_skills_with_llm
+
+@auth_bp.route("/api/extract-skills", methods=["POST"])
+@token_required
+def extract_skills_endpoint(current_user_id):
+    data = request.get_json() or {}
+    text = data.get("text", "").strip()
+    
+    if not text:
+        return jsonify({"error": "Text is required"}), 400
+        
+    extracted_skills = extract_skills_with_llm(text)
+    
+    if not extracted_skills:
+        return jsonify({"message": "No skills extracted", "skills": []}), 200
+        
+    added_skills = []
+    
+    with engine.connect() as conn:
+        for skill_name in extracted_skills:
+            # Check if skill exists
+            s_stmt = select(skills).where(skills.c.name.ilike(skill_name))
+            s_row = conn.execute(s_stmt).fetchone()
+
+            if s_row:
+                skill_id = s_row.id
+            else:
+                ins_s = insert(skills).values(name=skill_name).returning(skills.c.id)
+                skill_id = conn.execute(ins_s).scalar()
+
+            # Check if user already has skill
+            us_stmt = select(user_skills).where(
+                (user_skills.c.user_id == current_user_id) & (user_skills.c.skill_id == skill_id)
+            )
+            us_row = conn.execute(us_stmt).fetchone()
+
+            if not us_row:
+                conn.execute(
+                    insert(user_skills).values(
+                        user_id=current_user_id,
+                        skill_id=skill_id,
+                        proficiency_level="Beginner" # Default from extraction
+                    )
+                )
+                added_skills.append(skill_name)
+        
+        conn.commit()
+        
+    return jsonify({
+        "message": f"Successfully extracted and added {len(added_skills)} skills.",
+        "skills": added_skills
+    }), 200
+
+
 

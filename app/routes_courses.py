@@ -123,6 +123,10 @@ def unenroll_course(current_user_id, course_id):
     return jsonify({"message": "Successfully unenrolled from course", "enrolled": False}), 200
 
 
+from app.models import courses, skills, user_skills, user_courses, user_favorites, course_vectors
+from app.ai_services import generate_user_profile_vector, compute_similarity, generate_recommendation_explanation
+import json
+
 @courses_bp.route("/api/recommendations", methods=["GET"])
 @token_required
 def get_recommendations(current_user_id):
@@ -134,42 +138,55 @@ def get_recommendations(current_user_id):
             .where(user_skills.c.user_id == str(current_user_id))
         )
         user_skill_rows = conn.execute(user_skills_stmt).fetchall()
-        user_skills_set = {r.name.strip().lower() for r in user_skill_rows}
+        user_skills_list = [r.name.strip() for r in user_skill_rows]
 
-        # Expand user skills using synonym map
-        expanded_user_terms = set(user_skills_set)
-        for user_sk in user_skills_set:
-            if user_sk in SKILL_CATEGORY_MAP:
-                expanded_user_terms.update(SKILL_CATEGORY_MAP[user_sk])
-
-        all_courses = conn.execute(select(courses)).fetchall()
+        # Generate User Profile Vector
+        user_vector = generate_user_profile_vector(user_skills_list)
+        
+        # Get all course vectors
+        stmt = select(
+            courses.c.id, courses.c.title, courses.c.description, 
+            courses.c.instructor, courses.c.skill_requirements,
+            course_vectors.c.embedding_vector
+        ).select_from(
+            courses.join(course_vectors, courses.c.id == course_vectors.c.course_id)
+        )
+        
+        all_courses = conn.execute(stmt).fetchall()
         recommended = []
 
         for c in all_courses:
-            course_text = f"{c.title} {c.description or ''} {c.skill_requirements or ''}".lower()
+            course_vec = json.loads(c.embedding_vector)
             
-            # Find matching terms
-            matched_terms = [t for t in expanded_user_terms if t in course_text]
-            match_score = len(matched_terms)
-
-            # If user has skills specified, only include courses with >0 match score
-            if user_skills_set and match_score == 0:
-                continue
-
+            # Compute cosine similarity
+            sim_score = compute_similarity(user_vector, course_vec)
+            
             recommended.append({
                 "id": c.id,
                 "title": c.title,
                 "description": c.description,
                 "instructor": c.instructor,
                 "skill_requirements": c.skill_requirements,
-                "matched_skills": matched_terms,
-                "match_score": match_score
+                "match_score": round(sim_score * 100, 2),  # Percentage for display
+                "explanation": "" # We will generate this for top few
             })
 
         # Sort recommendations by highest match score first
         recommended.sort(key=lambda x: x["match_score"], reverse=True)
+        
+        # Take top 3 for LLM explanation to save time/tokens
+        top_recommendations = recommended[:3]
+        for rec in top_recommendations:
+            rec["explanation"] = generate_recommendation_explanation(
+                user_skills_list, 
+                rec["title"], 
+                rec["description"]
+            )
+            
+        # Add the rest without explanations
+        final_list = top_recommendations + recommended[3:]
 
-    return jsonify(recommended), 200
+    return jsonify(final_list), 200
 
 
 @courses_bp.route("/api/courses/<course_id>/favorite", methods=["POST"])

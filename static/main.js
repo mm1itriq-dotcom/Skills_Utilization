@@ -383,13 +383,20 @@ async function loadRecommendations() {
 
   grid.innerHTML = recs.map(c => {
     const isFav = userFavoriteCourseIds.has(c.id);
+    const scoreText = c.match_score ? `Match: ${c.match_score}%` : 'Recommended';
+    const explanationHtml = c.explanation 
+        ? `<div style="margin-top: 1rem; padding: 0.75rem; background: rgba(99, 102, 241, 0.1); border-left: 0.25rem solid var(--primary-indigo); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;">
+             <p style="font-size: 0.85rem; color: var(--text-main); margin: 0;"><strong><span class="material-symbols-outlined" style="font-size: 1rem; vertical-align: text-bottom; color: var(--primary-indigo);">smart_toy</span> AI Note:</strong> ${c.explanation}</p>
+           </div>`
+        : '';
+
     return `
     <div class="glass-card" style="display: flex; flex-direction: column; justify-content: space-between;">
       <div>
         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 0.5rem;">
           <div>
             <h3>${c.title}</h3>
-            <span class="match-pill">${c.match_score > 0 ? `Matched: ${c.matched_skills.slice(0, 2).join(', ')}` : 'Recommended'}</span>
+            <span class="match-pill">${scoreText}</span>
           </div>
           <button type="button" onclick="toggleFavoriteCourse('${c.id}', this)" class="heart-btn ${isFav ? 'is-favorite' : ''}" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}"><span class="material-symbols-outlined">favorite</span></button>
         </div>
@@ -398,8 +405,9 @@ async function loadRecommendations() {
         <div style="margin-bottom: 1rem;">
           ${(c.skill_requirements || '').split(',').map(s => `<span class="badge-tag">${s.trim()}</span>`).join('')}
         </div>
+        ${explanationHtml}
       </div>
-      <div>
+      <div style="margin-top: 1rem;">
         <a href="/course-details?id=${c.id}" class="btn-outline" style="font-size:0.85rem; padding:0.4rem 0.8rem; width: 100%; text-align: center; text-decoration: none; display: block;"><span class="material-symbols-outlined">visibility</span> View Course Details</a>
       </div>
     </div>
@@ -538,7 +546,10 @@ async function loadProfile() {
     <div style="margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
         <h3 style="font-size: 1.1rem; color: var(--text-main);">Selected Skills & Interests</h3>
-        <button onclick="toggleAddSkillForm()" class="btn-indigo" style="font-size: 0.85rem; padding: 0.4rem 0.9rem;"><span class="material-symbols-outlined">add</span> Add New Skill</button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button onclick="toggleAiSkillForm()" class="btn-outline" style="font-size: 0.85rem; padding: 0.4rem 0.9rem; border-color: var(--accent-emerald); color: var(--accent-emerald);"><span class="material-symbols-outlined">smart_toy</span> AI Extract Skills</button>
+          <button onclick="toggleAddSkillForm()" class="btn-indigo" style="font-size: 0.85rem; padding: 0.4rem 0.9rem;"><span class="material-symbols-outlined">add</span> Add New Skill</button>
+        </div>
       </div>
 
       <!-- Hidden inline Add Skill Form -->
@@ -552,6 +563,17 @@ async function loadProfile() {
             <option value="Advanced">Advanced</option>
           </select>
           <button onclick="submitNewSkill()" class="btn-indigo" style="padding: 0.6rem 1.25rem;">Save Skill</button>
+        </div>
+      </div>
+      
+      <!-- Hidden inline AI Extract Skill Form -->
+      <div id="aiSkillContainer" style="display: none; background: var(--subcard-bg); padding: 1.25rem; border-radius: var(--radius-md); border: 0.0625rem solid var(--accent-emerald); margin-bottom: 1.25rem;">
+        <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text-main);"><span class="material-symbols-outlined">smart_toy</span> Describe your goals and let AI extract your skills</h4>
+        <div style="display: flex; gap: 0.75rem; flex-direction: column;">
+          <textarea id="aiSkillText" class="glow-input" placeholder="E.g., I want to become a full stack developer focusing on React and Node.js..." rows="3" style="resize: vertical;"></textarea>
+          <div style="display: flex; justify-content: flex-end;">
+            <button onclick="submitAiSkillExtraction()" id="aiExtractBtn" class="btn-indigo" style="background: var(--accent-emerald); border: none; padding: 0.6rem 1.25rem;">Extract & Save</button>
+          </div>
         </div>
       </div>
 
@@ -768,6 +790,51 @@ async function submitNewSkill() {
     showInlineError('addSkillContainer', data.error || 'Failed to add skill');
   }
 }
+
+function toggleAiSkillForm() {
+  const container = document.getElementById('aiSkillContainer');
+  if (container) {
+    container.style.display = container.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+async function submitAiSkillExtraction() {
+  hideInlineError('aiSkillContainer');
+  const textInput = document.getElementById('aiSkillText');
+  const btn = document.getElementById('aiExtractBtn');
+  
+  if (!textInput || !textInput.value.trim()) {
+    showInlineError('aiSkillContainer', 'Please enter some text describing your goals.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = 'Extracting...';
+
+  const res = await fetch('/api/extract-skills', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader()
+    },
+    body: JSON.stringify({ text: textInput.value.trim() })
+  });
+
+  const data = await res.json();
+  btn.disabled = false;
+  btn.innerText = 'Extract & Save';
+  
+  if (res.ok) {
+    if (data.skills && data.skills.length > 0) {
+      loadProfile();
+    } else {
+      showInlineError('aiSkillContainer', 'No skills could be extracted from your text. Try being more specific.');
+    }
+  } else {
+    showInlineError('aiSkillContainer', data.error || 'Failed to extract skills');
+  }
+}
+
 
 async function deleteSkill(skillId) {
   const res = await fetch(`/api/users/skills/${skillId}`, {
